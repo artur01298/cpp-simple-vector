@@ -34,13 +34,13 @@ public:
     explicit SimpleVector(size_t size) : SimpleVector(size, std::move(Type{})) {}
 
     // Создаёт вектор из size элементов, инициализированных значением value
-    SimpleVector(size_t size, const Type& value) : simple_vector_(size), size_(size), capacity_(size)
+    SimpleVector(size_t size, const Type& value) : items_(size), size_(size), capacity_(size)
     {
         std::fill(begin(), end(), value);
     }
 
     // Создаёт вектор из std::initializer_list
-    SimpleVector(std::initializer_list<Type> init) : simple_vector_(init.size()), size_(init.size()), capacity_(init.size())
+    SimpleVector(std::initializer_list<Type> init) : items_(init.size()), size_(init.size()), capacity_(init.size())
     {
         std::copy(std::move_iterator(init.begin()), std::move_iterator(init.end()), begin());
     }
@@ -50,14 +50,14 @@ public:
         size_ = other.size_;
         capacity_ = other.capacity_;
         std::copy(other.begin(), other.end(), &replicator[0]);
-        simple_vector_.swap(replicator);
+        items_.swap(replicator);
     }
 
-    SimpleVector(SimpleVector&& other) : simple_vector_(other.size_)
+    SimpleVector(SimpleVector&& other) : items_(other.size_)
     {
         size_ = std::move(other.size_);
         capacity_ = std::move(other.capacity_);
-        simple_vector_.swap(other.simple_vector_);
+        items_.swap(other.items_);
         other.Clear();
     }
 
@@ -80,22 +80,22 @@ public:
     void PushBack(const Type& item) {
         if (capacity_ > size_)
         {
-            simple_vector_[size_++] = item;
+            items_[size_++] = item;
             return;
         }
         if (capacity_ > 0)
         {
             ArrayPtr<Type> replicator(capacity_ *= 2);
             std::copy(begin(), end(), &replicator[0]);
-            simple_vector_.swap(replicator);
-            simple_vector_[size_++] = item;
+            items_.swap(replicator);
+            items_[size_++] = item;
         }
         else
         {
             ArrayPtr<Type> replicator(++capacity_);
             std::copy(begin(), end(), &replicator[0]);
-            simple_vector_.swap(replicator);
-            simple_vector_[size_++] = item;
+            items_.swap(replicator);
+            items_[size_++] = item;
             return;
         }
     }
@@ -103,22 +103,22 @@ public:
     void PushBack(Type&& item) {
         if (capacity_ > size_)
         {
-            simple_vector_[size_++] = std::move(item);
+            items_[size_++] = std::move(item);
             return;
         }
         if (capacity_ > 0)
         {
             ArrayPtr<Type> replicator(capacity_ *= 2);
             std::move(begin(), end(), &replicator[0]);
-            simple_vector_.swap(replicator);
-            simple_vector_[size_++] = std::move(item);
+            items_.swap(replicator);
+            items_[size_++] = std::move(item);
         }
         else
         {
             ArrayPtr<Type> replicator(++capacity_);
             std::move(begin(), end(), &replicator[0]);
-            simple_vector_.swap(replicator);
-            simple_vector_[size_++] = std::move(item);
+            items_.swap(replicator);
+            items_[size_++] = std::move(item);
             return;
         }
     }
@@ -128,102 +128,82 @@ public:
     // Если перед вставкой значения вектор был заполнен полностью,
     // вместимость вектора должна увеличиться вдвое, а для вектора вместимостью 0 стать равной 1
     Iterator Insert(ConstIterator pos, const Type& value) {
-        if ((begin() <= pos) && (end() >= pos))
+        assert((begin() <= pos) && (end() >= pos));
+        auto interval = std::distance(cbegin(), pos);
+        if (size_ == capacity_)
         {
-            auto interval = std::distance(cbegin(), pos);
-            if (size_ == capacity_)
+            if (size_ > 0)
             {
-                if (size_ > 0)
-                {
-                    ArrayPtr<Type> replicator(size_ *= 2);
-                    std::copy(begin(), end(), &replicator[0]);
-                    simple_vector_.swap(replicator);
-                    size_ = size_;
-                    capacity_ = size_ * 2;
-                }
-                else
-                {
-                    ArrayPtr<Type> replicator(++capacity_);
-                    std::copy(begin(), end(), &replicator[0]);
-                    simple_vector_.swap(replicator);
-                    capacity_ = 1;
-                }
-            }
-            for (size_t i = size_; i > (size_t)interval; --i)
-            {
-                simple_vector_[i] = simple_vector_[i - 1];
-            }
-            size_++;
-            simple_vector_[interval] = value;
-            return const_cast<Iterator>(interval + begin());
-        }
-        else
-        {
-            throw std::out_of_range("Nonexistent vector element.");
-        }
-    }
-
-    Iterator Insert(ConstIterator pos, Type&& value) {
-        if ((begin() <= pos) && (end() >= pos))
-        {
-            if (capacity_ == 0)
-            {
-                ArrayPtr<Type> replicator(++capacity_);
-                std::move(begin(), end(), &replicator[0]);
-                simple_vector_.swap(replicator);
-                simple_vector_[size_++] = std::move(value);
-                return begin();
-            }
-            else if (capacity_ <= size_)
-            {
-                auto interval = std::distance(begin(), const_cast<Iterator>(pos));
-                ArrayPtr<Type> replicator(capacity_ *= 2);
-                std::move(begin(), end(), &replicator[0]);
-                std::copy_backward(std::make_move_iterator(const_cast<Iterator>(pos)), std::make_move_iterator(begin() + size_), (&replicator[1 + size_]));
-                replicator[interval] = std::move(value);
-                size_++;
-                simple_vector_.swap(replicator);
-                return Iterator(&simple_vector_[interval]);
+                ArrayPtr<Type> replicator(size_ *= 2);
+                std::copy(begin(), end(), &replicator[0]);
+                items_.swap(replicator);
+                size_ = size_;
+                capacity_ = size_ * 2;
             }
             else
             {
-                std::copy_backward(std::make_move_iterator(const_cast<Iterator>(pos)), std::make_move_iterator(end()), (&simple_vector_[++size_ + 1]));
-                *const_cast<Iterator>(pos) = std::move(value);
-                return const_cast<Iterator>(pos);
+                ArrayPtr<Type> replicator(++capacity_);
+                std::copy(begin(), end(), &replicator[0]);
+                items_.swap(replicator);
+                capacity_ = 1;
             }
+        }
+        for (size_t i = size_; i > (size_t)interval; --i)
+        {
+            items_[i] = items_[i - 1];
+        }
+        size_++;
+        items_[interval] = value;
+        return const_cast<Iterator>(interval + begin());
+    }
+
+    Iterator Insert(ConstIterator pos, Type&& value) {
+        assert((begin() <= pos) && (end() >= pos));
+        if (capacity_ == 0)
+        {
+            ArrayPtr<Type> replicator(++capacity_);
+            std::move(begin(), end(), &replicator[0]);
+            items_.swap(replicator);
+            items_[size_++] = std::move(value);
+            return begin();
+        }
+        else if (capacity_ <= size_)
+        {
+            auto interval = std::distance(begin(), const_cast<Iterator>(pos));
+            ArrayPtr<Type> replicator(capacity_ *= 2);
+            std::move(begin(), end(), &replicator[0]);
+            std::copy_backward(std::make_move_iterator(const_cast<Iterator>(pos)), std::make_move_iterator(begin() + size_), (&replicator[1 + size_]));
+            replicator[interval] = std::move(value);
+            size_++;
+            items_.swap(replicator);
+            return Iterator(&items_[interval]);
         }
         else
         {
-            throw std::out_of_range("Nonexistent vector element.");
+            std::copy_backward(std::make_move_iterator(const_cast<Iterator>(pos)), std::make_move_iterator(end()), (&items_[++size_ + 1]));
+            *const_cast<Iterator>(pos) = std::move(value);
+            return const_cast<Iterator>(pos);
         }
     }
 
     // "Удаляет" последний элемент вектора. Вектор не должен быть пустым
     void PopBack() noexcept {
-        if (size_ > 0)
-        {
-            size_--;
-        }
+        assert(size_ > 0);
+        size_--;
     }
 
     // Удаляет элемент вектора в указанной позиции
     Iterator Erase(ConstIterator pos) {
-        if (begin() <= pos && end() >= pos)
-        {
-            auto interval = std::distance(cbegin(), pos);
-            std::move(&simple_vector_[interval + 1], end(), const_cast<Iterator>(pos));
-            size_--;
-            return const_cast<Iterator>(pos);
-        }
-        else
-        {
-            throw std::out_of_range("Nonexistent vector element.");
-        }
+        assert((begin() <= pos) && (end() >= pos));
+        auto interval = std::distance(cbegin(), pos);
+        std::move(&items_[interval + 1], end(), const_cast<Iterator>(pos));
+        size_--;
+        return const_cast<Iterator>(pos);
     }
 
     // Обменивает значение с другим вектором
     void swap(SimpleVector& other) noexcept {
-        simple_vector_.swap(other.simple_vector_);
+        items_.swap(other.items_);
         std::swap(size_, other.size_);
         std::swap(capacity_, other.capacity_);
     }
@@ -234,7 +214,7 @@ public:
         {
             ArrayPtr<Type> replicator(new_capacity);
             std::copy(begin(), end(), &replicator[0]);
-            simple_vector_.swap(replicator);
+            items_.swap(replicator);
             capacity_ = new_capacity;
         }
         else
@@ -261,13 +241,13 @@ public:
     // Возвращает ссылку на элемент с индексом index
     Type& operator[](size_t index) noexcept {
         assert(index < size_);
-        return simple_vector_[index];
+        return items_[index];
     }
 
     // Возвращает константную ссылку на элемент с индексом index
     const Type& operator[](size_t index) const noexcept {
         assert(index < size_);
-        return simple_vector_[index];
+        return items_[index];
     }
 
     // Возвращает константную ссылку на элемент с индексом index
@@ -277,7 +257,7 @@ public:
         {
             throw std::out_of_range("Nonexistent vector element.");
         }
-        return simple_vector_[index];
+        return items_[index];
     }
 
     // Возвращает константную ссылку на элемент с индексом index
@@ -287,7 +267,7 @@ public:
         {
             throw std::out_of_range("Nonexistent vector element.");
         }
-        return simple_vector_[index];
+        return items_[index];
     }
 
     // Обнуляет размер массива, не изменяя его вместимость
@@ -315,7 +295,7 @@ public:
         {
             ArrayPtr<Type> replicator(new_size);
             std::move(begin(), end(), &replicator[0]);
-            simple_vector_.swap(replicator);
+            items_.swap(replicator);
             size_ = new_size;
             capacity_ = new_size * 2;
         }
@@ -324,13 +304,13 @@ public:
     // Возвращает итератор на начало массива
     // Для пустого массива может быть равен (или не равен) nullptr
     Iterator begin() noexcept {
-        return Iterator(&simple_vector_[0]);
+        return items_.Get();
     }
 
     // Возвращает итератор на элемент, следующий за последним
     // Для пустого массива может быть равен (или не равен) nullptr
     Iterator end() noexcept {
-        return Iterator(&simple_vector_[size_]);
+        return items_.Get() + size_;
     }
 
     // Возвращает константный итератор на начало массива
@@ -348,22 +328,26 @@ public:
     // Возвращает константный итератор на начало массива
     // Для пустого массива может быть равен (или не равен) nullptr
     ConstIterator cbegin() const noexcept {
-        return ConstIterator(&simple_vector_[0]);
+        return ConstIterator(items_.Get());
     }
 
     // Возвращает итератор на элемент, следующий за последним
     // Для пустого массива может быть равен (или не равен) nullptr
     ConstIterator cend() const noexcept {
-        return ConstIterator(&simple_vector_[size_]);
+        return ConstIterator(items_.Get() + size_);
     }
 private:
-    ArrayPtr<Type> simple_vector_;
+    ArrayPtr<Type> items_;
     size_t size_ = 0;
     size_t capacity_ = 0;
 };
 
 template <typename Type>
 inline bool operator==(const SimpleVector<Type>& lhs, const SimpleVector<Type>& rhs) {
+    if (lhs.GetSize() != rhs.GetSize())
+    {
+        return false;
+    }
     return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
 }
 
@@ -379,7 +363,7 @@ inline bool operator<(const SimpleVector<Type>& lhs, const SimpleVector<Type>& r
 
 template <typename Type>
 inline bool operator<=(const SimpleVector<Type>& lhs, const SimpleVector<Type>& rhs) {
-    return ((lhs < rhs) || (lhs == rhs));
+    return !(lhs > rhs);
 }
 
 template <typename Type>
